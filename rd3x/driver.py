@@ -1,8 +1,6 @@
 import struct
 import time
 
-from sympy import harmonic
-
 from .constants import *
 from .datatypes import *
 from .exceptions import *
@@ -227,74 +225,27 @@ class RD3X:
             )
 
 
-        phase_offsets = {
-            "A": 0,
-            "B": 14,
-            "C": 28,
-        }
+        phases = tuple(phase.upper() for phase in phases)
+        if len(phases) != 1 or phases[0] not in ("A", "B", "C"):
+            raise ValueError("Read one phase per RD-3X DCA: phases must be ('A',), ('B',), or ('C',)")
 
-        deadline = time.time() + timeout
+        # Command 0F reads the harmonic table for the DCA connected to the
+        # instrument. The DSP offset is in 4-byte words; each harmonic has
+        # three TI floats (amplitude, phase, distortion).
+        offset = (harmonic - 1) * VALUES_PER_HARMONIC
+        payload = struct.pack(">HI", BYTES_PER_HARMONIC, offset)
+        data = self.transact(CMD_READ_HARMONIC, payload)
 
+        if len(data) != BYTES_PER_HARMONIC:
+            raise RD3XProtocolError(
+                f"Expected {BYTES_PER_HARMONIC} bytes of harmonic data, received {len(data)}"
+            )
 
-        wanted_status = 2 if voltage else 3
-
-        while True:
-
-            #
-            # Status request
-            #
-            # payload = self.transact(CMD_TRIGGER_HARMONIC,bytes([0x00,harmonic]))
-            payload = self.transact(CMD_TRIGGER_HARMONIC,bytes([0x00,1,1,5]))
-            print(payload.hex())
-
-            ready = True
-
-            for phase in phases:
-
-                offset = phase_offsets[phase]
-
-                if payload[offset] != wanted_status:
-                    ready = False
-                    break
-
-            if ready:
-                break
-
-            if time.time() > deadline:
-                raise TimeoutError(
-                    f"Harmonic {harmonic} timed out"
-                )
-
-            time.sleep(0.05)
-
-        results = {}
-
-        for phase in phases:
-
-            offset = phase_offsets[phase]
-
-            results[phase] = {
-
-                "harmonic":
-                    payload[offset + 1],
-
-                "amplitude":
-                    decode_ti_float(
-                        payload[offset + 2 :
-                                offset + 6]
-                    ),
-
-                "phase":
-                    decode_ti_float(
-                        payload[offset + 6 :
-                                offset + 10]
-                    ),
-
-                "distortion":
-                    decode_ti_float(
-                        payload[offset + 10 :
-                                offset + 14]
-                    )
+        return {
+            phases[0]: {
+                "harmonic": harmonic,
+                "amplitude": decode_ti_float(data[0:4]),
+                "phase": decode_ti_float(data[4:8]),
+                "distortion": decode_ti_float(data[8:12]),
             }
-
-        return results
+        }
