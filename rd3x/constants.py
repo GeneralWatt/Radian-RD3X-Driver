@@ -3,6 +3,12 @@ from enum import IntEnum
 BAUDRATE = 57600
 START_BYTE = 0xA6
 
+CMD_TRIGGER_HARMONIC = 0x28
+CMD_READ_HARMONIC = 0x0F
+BYTES_PER_VALUE = 4
+VALUES_PER_HARMONIC = 3
+BYTES_PER_HARMONIC = 12
+MAX_RESPONSE_BYTES = 252
 
 class Ack(IntEnum):
     NO_DATA = 0x03
@@ -15,3 +21,14 @@ class Command(IntEnum):
     IDENTITY = 0x02
     READ_INSTANTANEOUS = 0x2E
     PULSE_CONSTANT = 0x32
+
+class HarmonicAxis(IntEnum):
+    VOLTAGE = 0x02
+    CURRENT = 0x03
+
+
+class HarmonicStatus(IntEnum):
+    NOT_RUNNING = 0
+    RUNNING = 1
+    VOLTAGE_READY = 2
+    CURRENT_READY = 3

@@ -1,6 +1,8 @@
 import struct
 import time
 
+from sympy import harmonic
+
 from .constants import *
 from .datatypes import *
 from .exceptions import *
@@ -8,14 +10,25 @@ from .protocol import *
 from .serial_transport import *
 from .ti_float import decode_ti_float
 
-class Metric:
-
+class Metric(IntEnum):
     VOLTAGE = 0
     CURRENT = 1
     POWER = 2
-    PHASE = 6
+    VA = 3
+    VAR = 4
+    FREQUENCY = 5
+    PHASE_ANGLE = 6
+    PF = 7
+    ANALOG_SENSE = 8
+    DELTA_PHASE = 9
+    DELTA_VOLTS = 10
+    DELTA_WATTS = 11
+    DELTA_VA = 12
+    DELTA_VAR = 13
+    X_DELTA_VAR = 14
+    X_WYE_VAR = 15
 
-class RD33:
+class RD3X:
 
     def __init__(self, port):
 
@@ -31,16 +44,9 @@ class RD33:
         self.close()
 
 
-    def transact(
-        self,
-        command,
-        payload=b""
-    ):
+    def transact(self,command,payload=b""):
 
-        packet = build_packet(
-            command,
-            payload
-        )
+        packet = build_packet(command,payload)
 
         with self.transport.lock:
 
@@ -70,41 +76,22 @@ class RD33:
 
             length_bytes = self.transport.read_exact(2)
 
-            length = struct.unpack(
-                ">H",
-                length_bytes
-            )[0]
+            length = struct.unpack(">H",length_bytes)[0]
 
-            payload = self.transport.read_exact(
-                length
-            )
+            payload = self.transport.read_exact(length)
 
             crc = self.transport.read_exact(2)
 
-            frame = (
-                head
-                + length_bytes
-                + payload
-                + crc
-            )
+            frame = (head + length_bytes + payload + crc)
 
-            if (
-                struct.unpack(">H", crc)[0]
-                != checksum(frame[:-2])
-            ):
-                raise RD33ChecksumError()
+            if (struct.unpack(">H", crc)[0] != checksum(frame[:-2])):
+                raise RD3XChecksumError()
 
             if ack == Ack.ERROR:
 
-                code = struct.unpack(
-                    ">H",
-                    payload[:2]
-                )[0]
+                code = struct.unpack(">H",payload[:2])[0]
 
-                raise RD33CommandError(
-                    command,
-                    code
-                )
+                raise RD3XCommandError(command,code)
 
             return payload
 
@@ -173,22 +160,141 @@ class RD33:
             total=values[3]
         )
 
-    def pulse_constant(
+
+# ------------------------------------------------------------------
+# Harmonics
+# ------------------------------------------------------------------
+
+    def start_voltage_harmonics(self):
+
+        # payload = self.transact(CMD_TRIGGER_HARMONIC,bytes([0x02, 1]))
+        payload = self.transact(CMD_TRIGGER_HARMONIC,bytes([0x02, 1,1,0]))
+
+        while payload[0] != 2:
+            
+            time.sleep(0.05)
+
+            payload = self.transact(CMD_TRIGGER_HARMONIC,bytes([0x00, 0x00]))
+
+
+    def start_current_harmonics(self):
+        payload = self.transact(CMD_TRIGGER_HARMONIC,bytes([0x03, 1]))
+
+        while payload[0] != 3:
+
+            time.sleep(0.05)
+
+            payload = self.transact(CMD_TRIGGER_HARMONIC,bytes([0x00, 0x00]))
+
+
+
+    def read_harmonic(
         self,
-        accumulator=0
+        harmonic: int,
+        voltage: bool = True,
+        phases=("A",),
+        timeout: float = 5.0
     ):
+        """
+        Read a single harmonic.
 
-        payload = self.transact(
+        Parameters
+        ----------
+        harmonic : int
+            Harmonic number 1..50
 
-            Command.PULSE_CONSTANT,
+        voltage : bool
+            True  = voltage harmonic
+            False = current harmonic
 
-            struct.pack(
-                ">HB",
-                accumulator,
-                1
-            ) + bytes(4)
-        )
+        phases : tuple
+            Example:
+                ("A",)
+                ("A","B")
+                ("A","B","C")
 
-        return decode_ti_float(
-            payload[:4]
-        )
+        timeout : float
+            Timeout in seconds
+
+        Returns
+        -------
+        dict
+        """
+
+        if not 1 <= harmonic <= 50:
+            raise ValueError(
+                "harmonic must be 1..50"
+            )
+
+
+        phase_offsets = {
+            "A": 0,
+            "B": 14,
+            "C": 28,
+        }
+
+        deadline = time.time() + timeout
+
+
+        wanted_status = 2 if voltage else 3
+
+        while True:
+
+            #
+            # Status request
+            #
+            # payload = self.transact(CMD_TRIGGER_HARMONIC,bytes([0x00,harmonic]))
+            payload = self.transact(CMD_TRIGGER_HARMONIC,bytes([0x00,1,1,5]))
+            print(payload.hex())
+
+            ready = True
+
+            for phase in phases:
+
+                offset = phase_offsets[phase]
+
+                if payload[offset] != wanted_status:
+                    ready = False
+                    break
+
+            if ready:
+                break
+
+            if time.time() > deadline:
+                raise TimeoutError(
+                    f"Harmonic {harmonic} timed out"
+                )
+
+            time.sleep(0.05)
+
+        results = {}
+
+        for phase in phases:
+
+            offset = phase_offsets[phase]
+
+            results[phase] = {
+
+                "harmonic":
+                    payload[offset + 1],
+
+                "amplitude":
+                    decode_ti_float(
+                        payload[offset + 2 :
+                                offset + 6]
+                    ),
+
+                "phase":
+                    decode_ti_float(
+                        payload[offset + 6 :
+                                offset + 10]
+                    ),
+
+                "distortion":
+                    decode_ti_float(
+                        payload[offset + 10 :
+                                offset + 14]
+                    )
+            }
+
+        return results

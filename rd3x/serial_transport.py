@@ -3,7 +3,7 @@ import threading
 import time
 
 from .constants import BAUDRATE
-from .exceptions import RD33Timeout
+from .exceptions import RD3XTimeout
 
 
 class SerialTransport:
@@ -32,7 +32,7 @@ class SerialTransport:
     def read_exact(
         self,
         count,
-        timeout=2.0
+        timeout=10.0
     ):
 
         deadline = time.monotonic() + timeout
@@ -48,6 +48,6 @@ class SerialTransport:
             )
 
             if time.monotonic() > deadline:
-                raise RD33Timeout()
+                raise RD3XTimeout()
 
         return bytes(data)

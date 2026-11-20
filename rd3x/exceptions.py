@@ -1,20 +1,20 @@
-class RD33Error(Exception):
+class RD3XError(Exception):
     pass
 
 
-class RD33Timeout(RD33Error):
+class RD3XTimeout(RD3XError):
     pass
 
 
-class RD33ChecksumError(RD33Error):
+class RD3XChecksumError(RD3XError):
     pass
 
 
-class RD33ProtocolError(RD33Error):
+class RD3XProtocolError(RD3XError):
     pass
 
 
-class RD33CommandError(RD33Error):
+class RD3XCommandError(RD3XError):
 
     def __init__(self, command, code):
         super().__init__(
