@@ -174,6 +174,7 @@ class RD3X:
 
             payload = self.transact(CMD_TRIGGER_HARMONIC,bytes([0x00, 0x00]))
 
+        print("Voltage Harmonics Ready")
 
     def start_current_harmonics(self):
         payload = self.transact(CMD_TRIGGER_HARMONIC,bytes([0x03, 1]))
@@ -184,7 +185,7 @@ class RD3X:
 
             payload = self.transact(CMD_TRIGGER_HARMONIC,bytes([0x00, 0x00]))
 
-
+        print("Current Harmonics Ready")
 
     def read_harmonic(
         self,
